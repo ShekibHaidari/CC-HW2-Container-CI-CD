@@ -22,8 +22,16 @@
 #   docker images
 #   docker push ghcr.io/<username>/cc-hello:slim
 
+# Docker cache test
+
 FROM python:3.12
-COPY . /app
+
 WORKDIR /app
+
+COPY requirements.txt .
+
 RUN pip install -r requirements.txt
+
+COPY app.py .
+
 CMD ["python", "app.py"]

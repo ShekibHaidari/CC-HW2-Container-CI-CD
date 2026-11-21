@@ -1,3 +1,4 @@
+
 # Python
 __pycache__/
 *.py[cod]
@@ -21,3 +22,8 @@ secret.txt
 
 # Local data
 volumes/
+
+# Docker layer experiments
+part1/secrets/*.tar
+part1/secrets/leaky-layers/
+part1/secrets/safe-layers/
