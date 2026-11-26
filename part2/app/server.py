@@ -49,7 +49,7 @@ def serve(host: str, port: int, data_dir: str) -> None:
                     payload = json.loads(raw.decode("utf-8"))
 
                     if not isinstance(payload, dict):
-                        raise ValueError("Invalid JSON object")
+                        raise TypeError("Invalid JSON object")
 
                     name = payload.get("name")
                     ticket = join(queue_path, name)
