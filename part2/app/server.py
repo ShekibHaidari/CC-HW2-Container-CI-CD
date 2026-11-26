@@ -1,21 +1,78 @@
-"""HTTP API for the lab queue.
 
-Bodies are plain text, not JSON:
-  GET  /health                  200  ok
-  POST /join   {"name": "..."}  200  ticket number, or 400 if the name is rejected
-  POST /next                    200  name, or 404 empty
+"""HTTP API for the lab queue."""
 
-Listen on PORT (default 8000). The queue file is DATA_DIR/queue.txt
-(DATA_DIR defaults to /data). main() must bind 0.0.0.0 so the published
-port is reachable. serve() must use the host it is given.
-"""
-
+import json
 import os
 
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+from app.queue import join, take
+
+# Rebuild test: source code updated.
 
 def serve(host: str, port: int, data_dir: str) -> None:
-    """Listen until the process is stopped. Use join and take from app.queue."""
-    raise NotImplementedError("TODO: serve the queue API")
+    """Start the queue HTTP server."""
+
+    queue_path = Path(data_dir) / "queue.txt"
+
+    class Handler(BaseHTTPRequestHandler):
+
+        def send_text(self, status: int, message: str) -> None:
+            data = message.encode("utf-8")
+
+            self.send_response(status)
+            self.send_header(
+                "Content-Type", "text/plain; charset=utf-8"
+            )
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def do_GET(self) -> None:
+            if self.path == "/health":
+                self.send_text(200, "ok")
+            else:
+                self.send_text(404, "not found")
+
+        def do_POST(self) -> None:
+
+            if self.path == "/join":
+                try:
+                    length = int(
+                        self.headers.get("Content-Length", "0")
+                    )
+
+                    if length <= 0 or length > 65536:
+                        raise ValueError("Invalid request size")
+
+                    raw = self.rfile.read(length)
+                    payload = json.loads(raw.decode("utf-8"))
+
+                    if not isinstance(payload, dict):
+                        raise ValueError("Invalid JSON object")
+
+                    name = payload.get("name")
+                    ticket = join(queue_path, name)
+
+                    self.send_text(200, str(ticket))
+
+                except (ValueError, UnicodeError, TypeError):
+                    self.send_text(400, "invalid name")
+
+            elif self.path == "/next":
+                try:
+                    name = take(queue_path)
+                    self.send_text(200, name)
+
+                except LookupError:
+                    self.send_text(404, "empty")
+
+            else:
+                self.send_text(404, "not found")
+
+    server = ThreadingHTTPServer((host, port), Handler)
+    server.serve_forever()
 
 
 def main() -> None:

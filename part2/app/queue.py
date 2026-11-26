@@ -1,8 +1,5 @@
-"""Queue stored as one name per line.
 
-The HTTP server must call these functions. Tests call them directly,
-with a temporary directory, and do not start Docker.
-"""
+"""Simple file-based FIFO queue."""
 
 from __future__ import annotations
 
@@ -10,20 +7,56 @@ from pathlib import Path
 
 
 def join(path: str | Path, name: str) -> int:
-    """Append one person and return the ticket number.
+    """Add a name to the queue and return its ticket number."""
 
-    The ticket number is how many names are in the file after this join.
-    Strip spaces around the name before storing it.
-    Raise ValueError, and do not create or change the file, when the
-    stripped name is empty, longer than 40 characters, or the original
-    name contains a newline.
-    """
-    raise NotImplementedError("TODO: append a line and return the ticket number")
+    if not isinstance(name, str):
+        raise ValueError("Name must be a string")
+
+    # Validate before changing the queue file.
+    if "\n" in name or "\r" in name:
+        raise ValueError("Newlines are not allowed")
+
+    name = name.strip()
+
+    if not name or len(name) > 40:
+        raise ValueError("Invalid name")
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    if path.exists():
+        names = path.read_text(encoding="utf-8").splitlines()
+    else:
+        names = []
+
+    names.append(name)
+
+    path.write_text(
+        "\n".join(names) + "\n",
+        encoding="utf-8"
+    )
+
+    return len(names)
 
 
 def take(path: str | Path) -> str:
-    """Remove and return the first name.
+    """Remove and return the first person in the queue."""
 
-    Raise LookupError when the file is missing or has no names.
-    """
-    raise NotImplementedError("TODO: remove the first line and return that name")
+    path = Path(path)
+
+    if not path.exists():
+        raise LookupError("Queue is empty")
+
+    names = path.read_text(encoding="utf-8").splitlines()
+
+    if not names:
+        raise LookupError("Queue is empty")
+
+    first = names.pop(0)
+
+    path.write_text(
+        "\n".join(names) + ("\n" if names else ""),
+        encoding="utf-8"
+    )
+
+    return first
