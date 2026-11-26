@@ -6,7 +6,6 @@ from __future__ import annotations
 import fcntl
 import os
 import tempfile
-
 from pathlib import Path
 
 
@@ -15,7 +14,7 @@ def join(path: str | Path, name: str) -> int:
 
     # Validate before touching the queue or lock file.
     if not isinstance(name, str):
-        raise ValueError("Name must be a string")
+        raise TypeError("Name must be a string")
 
     if "\n" in name or "\r" in name:
         raise ValueError("Newlines are not allowed")
