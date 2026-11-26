@@ -1,18 +1,22 @@
 
-"""Simple file-based FIFO queue."""
+"""File-based FIFO queue with safe concurrent access."""
 
 from __future__ import annotations
+
+import fcntl
+import os
+import tempfile
 
 from pathlib import Path
 
 
 def join(path: str | Path, name: str) -> int:
-    """Add a name to the queue and return its ticket number."""
+    """Add a person and return the current queue length."""
 
+    # Validate before touching the queue or lock file.
     if not isinstance(name, str):
         raise ValueError("Name must be a string")
 
-    # Validate before changing the queue file.
     if "\n" in name or "\r" in name:
         raise ValueError("Newlines are not allowed")
 
@@ -24,39 +28,81 @@ def join(path: str | Path, name: str) -> int:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    if path.exists():
-        names = path.read_text(encoding="utf-8").splitlines()
-    else:
-        names = []
+    lock_path = path.parent / "queue.lock"
 
-    names.append(name)
+    with open(lock_path, "a+b") as lock_file:
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
 
-    path.write_text(
-        "\n".join(names) + "\n",
-        encoding="utf-8"
-    )
+        try:
+            if path.exists():
+                names = path.read_text(
+                    encoding="utf-8"
+                ).splitlines()
+            else:
+                names = []
 
-    return len(names)
+            names.append(name)
+
+            path.write_text(
+                "\n".join(names) + "\n",
+                encoding="utf-8"
+            )
+
+            return len(names)
+
+        finally:
+            fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
 def take(path: str | Path) -> str:
-    """Remove and return the first person in the queue."""
+    """Remove and return the first person safely."""
 
     path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
 
-    if not path.exists():
-        raise LookupError("Queue is empty")
+    lock_path = path.parent / "queue.lock"
 
-    names = path.read_text(encoding="utf-8").splitlines()
+    with open(lock_path, "a+b") as lock_file:
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
 
-    if not names:
-        raise LookupError("Queue is empty")
+        try:
+            if not path.exists():
+                raise LookupError("Queue is empty")
 
-    first = names.pop(0)
+            names = path.read_text(
+                encoding="utf-8"
+            ).splitlines()
 
-    path.write_text(
-        "\n".join(names) + ("\n" if names else ""),
-        encoding="utf-8"
-    )
+            if not names:
+                raise LookupError("Queue is empty")
 
-    return first
+            first = names.pop(0)
+            remaining = (
+                "\n".join(names) + "\n" if names else ""
+            )
+
+            # Write to a unique temporary file.
+            temp_path = None
+
+            try:
+                with tempfile.NamedTemporaryFile(
+                    mode="w",
+                    encoding="utf-8",
+                    dir=path.parent,
+                    prefix=".queue-",
+                    delete=False
+                ) as temp_file:
+                    temp_path = Path(temp_file.name)
+                    temp_file.write(remaining)
+
+                # Atomically replace the original queue file.
+                os.replace(temp_path, path)
+
+            finally:
+                if temp_path is not None:
+                    temp_path.unlink(missing_ok=True)
+
+            return first
+
+        finally:
+            fcntl.flock(lock_file, fcntl.LOCK_UN)
